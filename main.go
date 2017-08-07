@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 )
 
-// Response comment
+// Response comment, TKL
 type Response struct {
 	Body []struct {
 		Journey struct {
@@ -24,6 +26,17 @@ type Response struct {
 	} `json:"body"`
 }
 
+// Tram comment, HSL
+type Tram struct {
+	VP struct {
+		Line    string          `json:"desi"`
+		Vehicle string          `json:"veh"`
+		Lat     json.RawMessage `json:"lat"`
+		Long    json.RawMessage `json:"long"`
+	} `json:"VP"`
+}
+
+// REST Get function
 func getData(response interface{}) error {
 	// TKL Live API
 	url := "http://data.itsfactory.fi/journeys/api/1/vehicle-activity"
@@ -44,14 +57,18 @@ func getData(response interface{}) error {
 	return json.NewDecoder(r.Body).Decode(response)
 }
 
-var f mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Message) {
-	fmt.Println(msg.Payload())
+// Subscription message handler for MQTT
+var handler mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Message) {
+	tram := new(Tram)
+
+	json.Unmarshal(msg.Payload(), &tram)
+	fmt.Println(tram.VP.Line, string(tram.VP.Lat), string(tram.VP.Long), tram.VP.Vehicle)
 }
 
 func main() {
-	fmt.Println("HSL Live")
-
-	/* // Response-struct to store HTTP GET response
+	fmt.Println("Starting...")
+	/* // REST
+	 // Response-struct to store HTTP GET response
 	response := new(Response)
 
 	for {
@@ -71,72 +88,39 @@ func main() {
 
 	//MQTT
 
+	signCh := make(chan os.Signal, 1)
+	signal.Notify(signCh, syscall.SIGINT, syscall.SIGTERM)
+
 	options := mqtt.NewClientOptions()
 	options.AddBroker("tcp://mqtt.hsl.fi:1883")
-	options.SetClientID("asd")
-	options.SetDefaultPublishHandler(f)
+	options.SetDefaultPublishHandler(handler)
+	options.SetClientID("client")
 
 	mqttClient := mqtt.NewClient(options)
 	if token := mqttClient.Connect(); token.Wait() && token.Error() != nil {
 		panic(token.Error())
 	}
 
-	if token := mqttClient.Subscribe("hfp/journey/tram/#", 1, nil); token.Wait() && token.Error() != nil {
+	if token := mqttClient.Subscribe("/hfp/journey/tram/#", 1, nil); token.Wait() && token.Error() != nil {
 		fmt.Println(token.Error())
 		os.Exit(1)
 	}
 
-	time.Sleep(time.Second * 5)
+	//time.Sleep(time.Second * 20)
 
-	if token := mqttClient.Unsubscribe("hfp/journey/tram/#"); token.Wait() && token.Error() != nil {
-		fmt.Println(token.Error())
-		os.Exit(1)
+	exit := false
+	for exit != true {
+		select {
+		case sign := <-signCh:
+			if token := mqttClient.Unsubscribe("/hfp/journey/tram/#"); token.Wait() && token.Error() != nil {
+				fmt.Println(token.Error())
+				os.Exit(1)
+			}
+			fmt.Println(sign)
+			mqttClient.Disconnect(250)
+			time.Sleep(time.Second * 2)
+			exit = true
+		default:
+		}
 	}
-
-	mqttClient.Disconnect(250)
-	time.Sleep(time.Second * 2)
-
-	/* // Signals
-	signCh := make(chan os.Signal, 1)
-	signal.Notify(signCh, os.Interrupt, os.Kill)
-
-	// MQTT Client
-	mqttClient := client.New(&client.Options{
-		ErrorHandler: func(err error) {
-			fmt.Println(err)
-		},
-	})
-	defer mqttClient.Terminate()
-
-	// Connect to HSL Live
-	err := mqttClient.Connect(&client.ConnectOptions{
-		Network:  "tcp",
-		Address:  "mqtt.hsl.fi:1883",
-		ClientID: []byte("hsl-client"),
-	})
-	if err != nil {
-		panic(err)
-	}
-
-	// Subscribe to tram data
-	err = mqttClient.Subscribe(&client.SubscribeOptions{
-		SubReqs: []*client.SubReq{
-			&client.SubReq{
-				TopicFilter: []byte("/hfp/journey/tram/#"),
-				QoS:         mqtt.QoS1,
-				Handler: func(topic, message []byte) {
-					fmt.Println("message!", string(message))
-				},
-			},
-		},
-	})
-	if err != nil {
-		panic(err)
-	}
-
-	<-signCh
-
-	if err := mqttClient.Disconnect(); err != nil {
-		panic(err)
-	}  */
 }
