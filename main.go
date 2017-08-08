@@ -15,7 +15,7 @@ import (
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 )
 
-// Response comment, TKL
+/* // Response comment, TKL
 type Response struct {
 	Body []struct {
 		Journey struct {
@@ -28,6 +28,7 @@ type Response struct {
 		} `json:"monitoredVehicleJourney"`
 	} `json:"body"`
 }
+*/
 
 // Tram comment, HSL
 type Tram struct {
@@ -79,17 +80,18 @@ func getData(response interface{}, url string) error {
 
 func sendToIoT(tram Tram, ID string) {
 	fmt.Println("Sending data")
-	url := strings.Join([]string{"https://milan_knp:Devbtiu202020@my.iot-ticket.com/api/v1/process/write/", ID}, "")
+	url := strings.Join([]string{"https://@my.iot-ticket.com/api/v1/process/write/", ID}, "")
 	var httpClient = &http.Client{
 		Timeout: time.Second * 10,
 	}
 	jsonStr := strings.Join([]string{`[{"name":"lat", "v":"`, string(tram.VP.Lat), `"}, {"name":"lon", "v":"`, string(tram.VP.Long), `"}, {"name":"num", "v":"`, tram.VP.Line, `"}]`}, "")
 	jsonBa := []byte(jsonStr)
 
-	_, err := httpClient.Post(url, "application/json", bytes.NewBuffer(jsonBa))
+	r, err := httpClient.Post(url, "application/json", bytes.NewBuffer(jsonBa))
 	if err != nil {
 		fmt.Println(err)
 	}
+	defer r.Body.Close()
 }
 
 // Subscription message handler for MQTT
@@ -107,14 +109,12 @@ var handler mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Message) {
 func main() {
 	fmt.Println("Starting...")
 
-	// Get existing devices
-	//TramIds := make(map[string]string)
 	repeat := 0
 	offset := 0
 
 	for offset <= repeat {
 
-		devicesURL := strings.Join([]string{"https://milan_knp:Devbtiu202020@my.iot-ticket.com/api/v1/devices?limit=100&offset=", strconv.Itoa(offset)}, "")
+		devicesURL := strings.Join([]string{"https://@my.iot-ticket.com/api/v1/devices?limit=100&offset=", strconv.Itoa(offset)}, "")
 		devices := new(Devices)
 		getData(&devices, devicesURL)
 
